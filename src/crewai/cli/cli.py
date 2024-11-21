@@ -3,6 +3,7 @@ from typing import Optional
 import click
 import pkg_resources
 
+from crewai.cli.add_crew_to_flow import add_crew_to_flow
 from crewai.cli.create_crew import create_crew
 from crewai.cli.create_flow import create_flow
 from crewai.cli.create_pipeline import create_pipeline
@@ -14,13 +15,14 @@ from .authentication.main import AuthenticationCommand
 from .deploy.main import DeployCommand
 from .evaluate_crew import evaluate_crew
 from .install_crew import install_crew
+from .kickoff_flow import kickoff_flow
 from .plot_flow import plot_flow
 from .replay_from_task import replay_task_command
 from .reset_memories_command import reset_memories_command
 from .run_crew import run_crew
-from .run_flow import run_flow
 from .tools.main import ToolCommand
 from .train_crew import train_crew
+from .update_crew import update_crew
 
 
 @click.group()
@@ -31,10 +33,12 @@ def crewai():
 @crewai.command()
 @click.argument("type", type=click.Choice(["crew", "pipeline", "flow"]))
 @click.argument("name")
-def create(type, name):
+@click.option("--provider", type=str, help="The provider to use for the crew")
+@click.option("--skip_provider", is_flag=True, help="Skip provider validation")
+def create(type, name, provider, skip_provider=False):
     """Create a new crew, pipeline, or flow."""
     if type == "crew":
-        create_crew(name)
+        create_crew(name, provider, skip_provider)
     elif type == "pipeline":
         create_pipeline(name)
     elif type == "flow":
@@ -132,6 +136,7 @@ def log_tasks_outputs() -> None:
 @click.option("-l", "--long", is_flag=True, help="Reset LONG TERM memory")
 @click.option("-s", "--short", is_flag=True, help="Reset SHORT TERM memory")
 @click.option("-e", "--entities", is_flag=True, help="Reset ENTITIES memory")
+@click.option("-kn", "--knowledge", is_flag=True, help="Reset KNOWLEDGE storage")
 @click.option(
     "-k",
     "--kickoff-outputs",
@@ -139,17 +144,24 @@ def log_tasks_outputs() -> None:
     help="Reset LATEST KICKOFF TASK OUTPUTS",
 )
 @click.option("-a", "--all", is_flag=True, help="Reset ALL memories")
-def reset_memories(long, short, entities, kickoff_outputs, all):
+def reset_memories(
+    long: bool,
+    short: bool,
+    entities: bool,
+    knowledge: bool,
+    kickoff_outputs: bool,
+    all: bool,
+) -> None:
     """
     Reset the crew memories (long, short, entity, latest_crew_kickoff_ouputs). This will delete all the data saved.
     """
     try:
-        if not all and not (long or short or entities or kickoff_outputs):
+        if not all and not (long or short or entities or knowledge or kickoff_outputs):
             click.echo(
                 "Please specify at least one memory type to reset using the appropriate flags."
             )
             return
-        reset_memories_command(long, short, entities, kickoff_outputs, all)
+        reset_memories_command(long, short, entities, knowledge, kickoff_outputs, all)
     except Exception as e:
         click.echo(f"An error occurred while resetting memories: {e}", err=True)
 
@@ -175,10 +187,16 @@ def test(n_iterations: int, model: str):
     evaluate_crew(n_iterations, model)
 
 
-@crewai.command()
-def install():
+@crewai.command(
+    context_settings=dict(
+        ignore_unknown_options=True,
+        allow_extra_args=True,
+    )
+)
+@click.pass_context
+def install(context):
     """Install the Crew."""
-    install_crew()
+    install_crew(context.args)
 
 
 @crewai.command()
@@ -186,6 +204,12 @@ def run():
     """Run the Crew."""
     click.echo("Running the Crew")
     run_crew()
+
+
+@crewai.command()
+def update():
+    """Update the pyproject.toml of the Crew project to use uv."""
+    update_crew()
 
 
 @crewai.command()
@@ -276,7 +300,13 @@ def tool_install(handle: str):
 
 
 @tool.command(name="publish")
-@click.option("--force", is_flag=True, show_default=True, default=False, help="Bypasses Git remote validations")
+@click.option(
+    "--force",
+    is_flag=True,
+    show_default=True,
+    default=False,
+    help="Bypasses Git remote validations",
+)
 @click.option("--public", "is_public", flag_value=True, default=False)
 @click.option("--private", "is_public", flag_value=False)
 def tool_publish(is_public: bool, force: bool):
@@ -291,11 +321,11 @@ def flow():
     pass
 
 
-@flow.command(name="run")
+@flow.command(name="kickoff")
 def flow_run():
-    """Run the Flow."""
+    """Kickoff the Flow."""
     click.echo("Running the Flow")
-    run_flow()
+    kickoff_flow()
 
 
 @flow.command(name="plot")
@@ -303,6 +333,14 @@ def flow_plot():
     """Plot the Flow."""
     click.echo("Plotting the Flow")
     plot_flow()
+
+
+@flow.command(name="add-crew")
+@click.argument("crew_name")
+def flow_add_crew(crew_name):
+    """Add a crew to an existing flow."""
+    click.echo(f"Adding crew {crew_name} to the flow")
+    add_crew_to_flow(crew_name)
 
 
 if __name__ == "__main__":

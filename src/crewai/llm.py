@@ -1,16 +1,16 @@
+import io
+import logging
+import sys
+import warnings
 from contextlib import contextmanager
 from typing import Any, Dict, List, Optional, Union
-import logging
-import warnings
+
 import litellm
 from litellm import get_supported_openai_params
 
 from crewai.utilities.exceptions.context_window_exceeding_exception import (
     LLMContextLengthExceededException,
 )
-
-import sys
-import io
 
 
 class FilteredStream(io.StringIO):
@@ -118,12 +118,12 @@ class LLM:
 
         litellm.drop_params = True
         litellm.set_verbose = False
-        litellm.callbacks = callbacks
+        self.set_callbacks(callbacks)
 
     def call(self, messages: List[Dict[str, str]], callbacks: List[Any] = []) -> str:
         with suppress_warnings():
             if callbacks and len(callbacks) > 0:
-                litellm.callbacks = callbacks
+                self.set_callbacks(callbacks)
 
             try:
                 params = {
@@ -181,3 +181,15 @@ class LLM:
     def get_context_window_size(self) -> int:
         # Only using 75% of the context window size to avoid cutting the message in the middle
         return int(LLM_CONTEXT_WINDOW_SIZES.get(self.model, 8192) * 0.75)
+
+    def set_callbacks(self, callbacks: List[Any]):
+        callback_types = [type(callback) for callback in callbacks]
+        for callback in litellm.success_callback[:]:
+            if type(callback) in callback_types:
+                litellm.success_callback.remove(callback)
+
+        for callback in litellm._async_success_callback[:]:
+            if type(callback) in callback_types:
+                litellm._async_success_callback.remove(callback)
+
+        litellm.callbacks = callbacks

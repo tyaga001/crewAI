@@ -1,20 +1,22 @@
 import base64
-from pathlib import Path
-import click
 import os
 import subprocess
 import tempfile
+from pathlib import Path
 
-from crewai.cli.command import BaseCommand, PlusAPIMixin
+import click
+from rich.console import Console
+
 from crewai.cli import git
+from crewai.cli.command import BaseCommand, PlusAPIMixin
+from crewai.cli.config import Settings
 from crewai.cli.utils import (
-    get_project_name,
     get_project_description,
+    get_project_name,
     get_project_version,
     tree_copy,
     tree_find_and_replace,
 )
-from rich.console import Console
 
 console = Console()
 
@@ -82,7 +84,7 @@ class ToolCommand(BaseCommand, PlusAPIMixin):
 
         with tempfile.TemporaryDirectory() as temp_build_dir:
             subprocess.run(
-                ["poetry", "build", "-f", "sdist", "--output", temp_build_dir],
+                ["uv", "build", "--sdist", "--out-dir", temp_build_dir],
                 check=True,
                 capture_output=False,
             )
@@ -92,7 +94,7 @@ class ToolCommand(BaseCommand, PlusAPIMixin):
             )
             if not tarball_filename:
                 console.print(
-                    "Project build failed. Please ensure that the command `poetry build -f sdist` completes successfully.",
+                    "Project build failed. Please ensure that the command `uv build --sdist` completes successfully.",
                     style="bold red",
                 )
                 raise SystemExit
@@ -143,72 +145,41 @@ class ToolCommand(BaseCommand, PlusAPIMixin):
 
         if login_response.status_code != 200:
             console.print(
-                "Failed to authenticate to the tool repository. Make sure you have the access to tools.",
+                "Authentication failed. Verify access to the tool repository, or try `crewai login`. ",
                 style="bold red",
             )
             raise SystemExit
 
         login_response_json = login_response.json()
-        for repository in login_response_json["repositories"]:
-            self._add_repository_to_poetry(
-                repository, login_response_json["credential"]
-            )
+
+        settings = Settings()
+        settings.tool_repository_username = login_response_json["credential"]["username"]
+        settings.tool_repository_password = login_response_json["credential"]["password"]
+        settings.dump()
 
         console.print(
-            "Succesfully authenticated to the tool repository.", style="bold green"
+            "Successfully authenticated to the tool repository.", style="bold green"
         )
-
-    def _add_repository_to_poetry(self, repository, credentials):
-        repository_handle = f"crewai-{repository['handle']}"
-
-        add_repository_command = [
-            "poetry",
-            "source",
-            "add",
-            "--priority=explicit",
-            repository_handle,
-            repository["url"],
-        ]
-        add_repository_result = subprocess.run(
-            add_repository_command, text=True, check=True
-        )
-
-        if add_repository_result.stderr:
-            click.echo(add_repository_result.stderr, err=True)
-            raise SystemExit
-
-        add_repository_credentials_command = [
-            "poetry",
-            "config",
-            f"http-basic.{repository_handle}",
-            credentials["username"],
-            credentials["password"],
-        ]
-        add_repository_credentials_result = subprocess.run(
-            add_repository_credentials_command,
-            capture_output=False,
-            text=True,
-            check=True,
-        )
-
-        if add_repository_credentials_result.stderr:
-            click.echo(add_repository_credentials_result.stderr, err=True)
-            raise SystemExit
 
     def _add_package(self, tool_details):
         tool_handle = tool_details["handle"]
         repository_handle = tool_details["repository"]["handle"]
-        pypi_index_handle = f"crewai-{repository_handle}"
+        repository_url = tool_details["repository"]["url"]
+        index = f"{repository_handle}={repository_url}"
 
         add_package_command = [
-            "poetry",
+            "uv",
             "add",
-            "--source",
-            pypi_index_handle,
+            "--index",
+            index,
             tool_handle,
         ]
         add_package_result = subprocess.run(
-            add_package_command, capture_output=False, text=True, check=True
+            add_package_command,
+            capture_output=False,
+            env=self._build_env_with_credentials(repository_handle),
+            text=True,
+            check=True
         )
 
         if add_package_result.stderr:
@@ -227,3 +198,13 @@ class ToolCommand(BaseCommand, PlusAPIMixin):
                 "[bold yellow]Tip:[/bold yellow] Navigate to a different directory and try again."
             )
             raise SystemExit
+
+    def _build_env_with_credentials(self, repository_handle: str):
+        repository_handle = repository_handle.upper().replace("-", "_")
+        settings = Settings()
+
+        env = os.environ.copy()
+        env[f"UV_INDEX_{repository_handle}_USERNAME"] = str(settings.tool_repository_username or "")
+        env[f"UV_INDEX_{repository_handle}_PASSWORD"] = str(settings.tool_repository_password or "")
+
+        return env
