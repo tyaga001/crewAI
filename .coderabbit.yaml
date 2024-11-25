@@ -1,26 +1,14 @@
-  language: "en-US"
-  reviews:
-    auto_review:
-      enabled: true
-      drafts: false
-    tools:
-      ruff:
-        enabled: true
-      ast-grep:
-        essential_rules: true
-        rule_dirs:
-          - "custom_rules"
-      pylint:
-        enabled: true
-    path_instructions:
-      - path: "**/*.py"
-        instructions: |
-          - Follow PEP 8 style guide for Python code.
-          - Use type hints for function arguments and return values.
-          - Ensure proper docstrings for classes and functions.
-          - Avoid using global variables.
-          - Use list comprehensions and generator expressions where appropriate.
-          - Prefer 'is' or 'is not' when comparing with None.
-          - Use f-strings for string formatting when possible.
-  chat:
-    auto_reply: true
+language: "en-US"
+early_access: false
+reviews:
+  profile: "chill"
+  request_changes_workflow: false
+  high_level_summary: true
+  poem: false
+  review_status: true
+  collapse_walkthrough: false
+  auto_review:
+    enabled: true
+    drafts: false
+chat:
+  auto_reply: true
