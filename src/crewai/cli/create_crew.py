@@ -71,6 +71,7 @@ def create_crew(name: str, template_path: Optional[str] = None) -> bool:
         folder_name
       )
 
+
     for file_name in tools_template_files:
       copy_template(
         templates_dir / file_name,
